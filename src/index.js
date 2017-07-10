@@ -1,49 +1,78 @@
-// (C) Copyright 2014-2015 Hewlett Packard Enterprise Development LP
+// (C) Copyright 2014-2016 Hewlett Packard Enterprise Development LP
 
-require('autotrack');
-require('./lib/modernizr');
+import React from 'react';
+import ReactDOM from 'react-dom';
+import ReactDOMServer from 'react-dom/server';
+import { AppContainer } from 'react-hot-loader';
+import { match, RouterContext, useRouterHistory } from 'react-router';
+import { createMemoryHistory } from 'history';
+import { initialize } from './utils/analytics';
+import template from './template.ejs';
+import App from './App';
 
-if (! Modernizr.flexbox ||
-  ! Modernizr.rgba) {
-  alert('Unfortunately, your browser appears to be too old. ' +
-    'We recommend the latest version of Chrome, Firefox, Safari, or Internet Explorer. ' +
-    'If you are using the latest Internet Explorer, you will need to turn off Compatibility Mode.');
-}
 
-var React = require('react');
-var ReactDOM = require('react-dom');
-var Router = require('react-router').Router;
-var history = require('./RouteHistory');
+if (typeof document !== 'undefined') {
+  require('autotrack');
+  require('./lib/modernizr');
 
-var themeGroups = /docs\/([^\/]+)\/?/.exec(window.location.pathname);
+  // Initialize react-ga
+  initialize();
 
-var theme = '';
-if (themeGroups && themeGroups.length > 1) {
-  theme = themeGroups[1];
-  var possibleThemes = 'aruba,hpe,hpinc';
-  if (possibleThemes.indexOf(theme) === -1) {
-    theme = '';
+  const element = document.getElementById('content');
+  ReactDOM.render(
+    <AppContainer>
+      <App />
+    </AppContainer>, element);
+
+  document.body.classList.remove('loading');
+
+  // Hot Module Replacement API
+  if (module.hot) {
+    module.hot.accept('./App', () => {
+      const NextApp = require('./App').default;
+      ReactDOM.render(
+        <AppContainer>
+          <NextApp />
+        </AppContainer>,
+        element
+      );
+    });
   }
 }
 
-var themeLink = document.getElementById('theme-link');
-var themeUrl = '/docs/' + (theme === '' ? 'vanilla' : theme) + '.min.css';
-themeLink.setAttribute('href', themeUrl);
+const THEMES = ['vanilla', 'aruba', 'hpe', 'hpinc'];
 
-var rootPath = '/docs/' + (theme === '' ? '' : theme + '/');
-
-var routes = require('./routes')(rootPath);
-var element = document.getElementById('content');
-
-var onRouteUpdate = function () {
-  var docElements = document.querySelectorAll('.article');
-  if (docElements.length > 0 && window.location.hash === '') {
-    docElements[0].scrollTop = 0;
+function basenameForTheme (theme) {
+  let basename;
+  if ('vanilla' === theme || THEMES.indexOf(theme) === -1) {
+    basename = '/';
+  } else {
+    basename = `/${theme}`;
   }
-  element.focus();
+  return basename;
+}
+
+export default (locals, callback) => {
+  const routes = locals.routes;
+  const basename = basenameForTheme(locals.theme);
+  let historyOptions = {};
+  if ('/' !== basename) {
+    historyOptions.basename = basename;
+  }
+  const history = useRouterHistory(createMemoryHistory)(historyOptions);
+  const location = history.createLocation(locals.path);
+
+  match({ routes, history, location },
+    (error, redirectLocation, renderProps) => {
+      callback(
+        null, template({
+          theme: locals.theme,
+          html: ReactDOMServer.renderToString(
+            <App>
+              <RouterContext {...renderProps} />
+            </App>
+          )
+        })
+      );
+    });
 };
-
-ReactDOM.render(<Router onUpdate={onRouteUpdate}
-  routes={routes} history={history} />, element);
-
-document.body.classList.remove('loading');
